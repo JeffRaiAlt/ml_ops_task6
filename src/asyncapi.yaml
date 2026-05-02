@@ -1,0 +1,189 @@
+asyncapi: "3.0.0"
+
+info:
+  title: ML Video Mosaic Pipeline
+  version: "1.0.0"
+  description: >
+    Асинхронный ML-конвейер для обработки видео:    
+    преобразование кадра в grayscale, детекция лиц каскадом Хаара    
+    и применение mosaic-effect к найденным лицам.
+
+# Может быть kafka, mqtt, redis, websocket, http и т.д
+# Влияет на то, какие binding-поля доступны ниже.
+servers:
+  rabbitmq:
+    host: localhost:5672
+    protocol: amqp
+    description: Брокер RabbitMQ
+
+# Канал обмена данными: очередь, топик.
+channels:
+  frame.received:
+    address: frame.received # routing key для RabbitMQ
+    # здесь и далее я не использую секцию bindings, а это значит имя канала
+    #frame.received становится именем очереди и routing key одновременно.
+    #Очередь привязывается к Default Exchange автоматически.
+    messages:
+      FrameReceivedEvent:
+        # описание структуры сообщения
+        $ref: "#/components/messages/FrameReceivedEvent"
+
+  grayscale.frame.created:
+    address: grayscale.frame.created
+    messages:
+      GrayscaleFrameCreatedEvent:
+        $ref: "#/components/messages/GrayscaleFrameCreatedEvent"
+
+  faces.detected:
+    address: faces.detected
+    messages:
+      FacesDetectedEvent:
+        $ref: "#/components/messages/FacesDetectedEvent"
+
+  frame.mosaiced:
+    address: frame.mosaiced
+    messages:
+      FrameMosaicedEvent:
+        $ref: "#/components/messages/FrameMosaicedEvent"
+
+operations:
+  convertFrameToGray:
+    action: receive
+    channel:
+      $ref: "#/channels/frame.received"
+    reply:
+      channel:
+        $ref: "#/channels/grayscale.frame.created"
+    summary: > 
+      Получаем frame из одного канала, преобразуем в
+      grayscale и пересылаем в другой канал
+
+  detectFaces:
+    action: receive
+    channel:
+      $ref: "#/channels/grayscale.frame.created"
+    reply:
+      channel:
+        $ref: "#/channels/faces.detected"
+    summary: >
+      Получаем уже обработанный grayscale frame и выполняем 
+      детекцию лица использую Хаар каскад и отправляю дальше в следующий
+      канал
+
+  applyMosaic:
+    action: receive
+    channel:
+      $ref: "#/channels/faces.detected"
+    reply:
+      channel:
+        $ref: "#/channels/frame.mosaiced"
+    summary: >
+      Получаем сообщение с найденным лицом, накладываем мозаику и 
+      возвращаем результат
+
+components:
+  messages:
+    FrameReceivedEvent:
+      name: FrameReceivedEvent
+      title: Исходный фрейм
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/FrameReceivedPayload"
+
+    GrayscaleFrameCreatedEvent:
+      name: GrayscaleFrameCreatedEvent
+      title: Frame обработанный Grayscale
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/GrayscaleFrameCreatedPayload"
+
+    FacesDetectedEvent:
+      name: FacesDetectedEvent
+      title: Frame с обнаруженным лицом
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/FacesDetectedPayload"
+
+    FrameMosaicedEvent:
+      name: FrameMosaicedEvent
+      title: Финальный frame с мозаикой
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/FrameMosaicedPayload"
+
+  schemas:
+    # Здесь описываем данные которые передаем в каждом из используемых
+    # сообщений
+    FrameReceivedPayload:
+      type: object
+      required:
+        - frame_id
+        - frame_b64
+      properties:
+        frame_id:
+          type: string
+          description: Уникальный идентификатор frame
+          example: "frame_000001"
+        frame_b64:
+          type: string
+          description: Исходный frame закодированный (JPEG base64 string)
+
+    GrayscaleFrameCreatedPayload:
+      type: object
+      required:
+        - frame_id
+        - original_frame_b64
+        - gray_frame_b64
+      properties:
+        frame_id:
+          type: string
+          example: "frame_000001"
+        original_frame_b64:
+          type: string
+          description: >
+            Исходный frame (JPEG base64 string)
+        gray_frame_b64:
+          type: string
+          description: >
+            Преобразованный Grayscale frame (JPEG base64 string)
+
+    FacesDetectedPayload:
+      type: object
+      required:
+        - frame_id
+        - original_frame_b64
+        - faces
+      properties:
+        frame_id:
+          type: string
+          example: "frame_000001"
+        original_frame_b64:
+          type: string
+          description: >
+            Исходный frame (JPEG base64 string)
+        faces:
+          type: array
+          description: Список обнаруженных рамок ограничивающих лица
+          items:
+            type: array
+            minItems: 4
+            maxItems: 4
+            items:
+              type: integer
+          example:
+            - [120, 80, 64, 64]
+            - [300, 100, 70, 70]
+
+    FrameMosaicedPayload:
+      type: object
+      required:
+        - frame_id
+        - mosaiced_frame_b64
+      properties:
+        frame_id:
+          type: string
+          example: "frame_000001"
+        mosaiced_frame_b64:
+          type: string
+          description: >
+            Финальный frame с наложенной мозаикой (JPEG base64 string) 
