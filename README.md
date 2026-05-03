@@ -177,7 +177,7 @@ ONNX Runtime или PyTorch, где один вызов обрабатывает
 Готово → HW5_Woman_Happy_blurred.avi
 Общее время: 56.9 сек (0.9 мин)
 
-Используем faststream
+Используем faststream 📄 [task5_faststream.py](src/task5_faststream.py)
 
 `docker start rabbitmq`
 
