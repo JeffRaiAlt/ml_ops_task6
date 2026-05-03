@@ -23,7 +23,7 @@ height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 total  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
 print(f"Обработка: FPS={fps}, Res={width}x{height}, Кадров={total}")
-
+start = time.perf_counter()
 # Отправляем кадры в очередь
 with tqdm(total=total, desc="Отправка") as pbar:
     for idx in range(total):
@@ -61,3 +61,5 @@ with tqdm(total=total, desc="Запись") as pbar:
 
 writer.release()
 print(f"Готово → {VIDEO_OUT}")
+elapsed = time.perf_counter() - start
+print(f"Общее время: {elapsed:.1f} сек ({elapsed / 60:.1f} мин)")
